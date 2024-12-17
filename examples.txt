@@ -1,0 +1,13 @@
+Static game that using a set of chords
+    python3 RandomChord.py --type=static --speed=2 --duration=600 --chords A Am D Dm
+
+Static game with hard chords
+    python3 RandomChord.py --type=static --speed=2 --duration=600 --chords A D Dm C G
+
+Static game that used all the default chords
+    python3 RandomChord.py --type=static --speed=2 --duration=600
+
+Speed game using default values
+python3 RandomChord.py 
+    Uses the following
+    python3 RandomChord.py --type=speed --rep=20 --step=0.25 --startspeed=3 --min=0.5

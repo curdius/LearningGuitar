@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Random Chord Game</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    text-align: center;
+    padding: 20px;
+  }
+
+  h1 {
+    font-size: 2em;
+    margin-bottom: 20px;
+  }
+
+  #chordDisplay {
+    font-size: 5em;
+    font-weight: bold;
+    margin: 40px 0;
+  }
+
+  .controls {
+    margin-bottom: 20px;
+  }
+
+  label {
+    display: block;
+    margin: 10px 0;
+  }
+
+  input, select {
+    font-size: 1em;
+    padding: 5px;
+  }
+
+  button {
+    font-size: 1.2em;
+    padding: 10px 20px;
+    margin-top: 20px;
+    margin-right: 10px;
+  }
+
+  .hidden {
+    display: none;
+  }
+</style>
+</head>
+<body>
+<h1>Random Chord Game</h1>
+<div class="controls">
+  <label>
+    Type of Game:
+    <select id="gameType">
+      <option value="speed">Speed</option>
+      <option value="static">Static</option>
+    </select>
+  </label>
+
+  <label>
+    Chords (space-separated):
+    <input id="chordsInput" type="text" value="A Am C D Dm E Em G" />
+  </label>
+  
+  <!-- Speed Game Fields -->
+  <div id="speedFields">
+    <label>
+      Repetitions per Interval:
+      <input id="rep" type="number" value="20" />
+    </label>
+    <label>
+      Interval Step (seconds):
+      <input id="step" type="number" step="0.01" value="0.25" />
+    </label>
+    <label>
+      Start Speed (seconds):
+      <input id="startSpeed" type="number" step="0.1" value="3" />
+    </label>
+    <label>
+      Minimum Speed (seconds):
+      <input id="minSpeed" type="number" step="0.1" value="0.5" />
+    </label>
+  </div>
+
+  <!-- Static Game Fields -->
+  <div id="staticFields" class="hidden">
+    <label>
+      Constant Speed (seconds):
+      <input id="constantSpeed" type="number" step="0.1" value="2" />
+    </label>
+    <label>
+      Duration (seconds):
+      <input id="duration" type="number" step="1" value="300" />
+    </label>
+  </div>
+
+  <button id="startButton">Start Game</button>
+  <button id="pauseButton" class="hidden">Pause</button>
+</div>
+
+<div id="chordDisplay"></div>
+
+<script>
+var paused = false;
+var currentGameTimeout = null;
+var nextChordDueTime = 0; // Timestamp when the next chord is due
+var remainingTime = 0;    // How long until next chord when paused
+
+// Data needed to resume game logic
+var gameMode = null;
+var chords = [];
+var speedParams = {};  // For speed mode
+var staticParams = {}; // For static mode
+var timeIntervalCount, startingTimeInterval, numberOfChangesPerTime, startTime; // For speed/static logic
+
+document.getElementById('gameType').addEventListener('change', function() {
+  toggleFields();
+});
+
+function toggleFields() {
+  var gameType = document.getElementById('gameType').value;
+  var speedFields = document.getElementById('speedFields');
+  var staticFields = document.getElementById('staticFields');
+
+  if (gameType === 'speed') {
+    speedFields.classList.remove('hidden');
+    staticFields.classList.add('hidden');
+  } else {
+    speedFields.classList.add('hidden');
+    staticFields.classList.remove('hidden');
+  }
+}
+
+document.getElementById('startButton').addEventListener('click', function() {
+  startGame();
+});
+
+document.getElementById('pauseButton').addEventListener('click', function() {
+  togglePause();
+});
+
+function startGame() {
+  // Clear any previous intervals/timeouts
+  if (currentGameTimeout) clearTimeout(currentGameTimeout);
+
+  paused = false;
+  document.getElementById('pauseButton').textContent = "Pause";
+  document.getElementById('pauseButton').classList.remove('hidden');
+
+  gameMode = document.getElementById('gameType').value;
+  chords = document.getElementById('chordsInput').value.trim().split(/\s+/);
+
+  if (gameMode === 'speed') {
+    speedParams.rep = parseInt(document.getElementById('rep').value, 10);
+    speedParams.step = parseFloat(document.getElementById('step').value);
+    speedParams.startSpeed = parseFloat(document.getElementById('startSpeed').value);
+    speedParams.minSpeed = parseFloat(document.getElementById('minSpeed').value);
+
+    playSpeedGame(speedParams.rep, speedParams.startSpeed, speedParams.step, speedParams.minSpeed, chords);
+  } else {
+    staticParams.constantSpeed = parseFloat(document.getElementById('constantSpeed').value);
+    staticParams.duration = parseFloat(document.getElementById('duration').value);
+
+    playStaticGame(staticParams.constantSpeed, staticParams.duration, chords);
+  }
+}
+
+function togglePause() {
+  if (!paused) {
+    // Pause the game
+    paused = true;
+    document.getElementById('pauseButton').textContent = "Resume";
+    if (currentGameTimeout) {
+      var now = Date.now();
+      remainingTime = nextChordDueTime - now;
+      clearTimeout(currentGameTimeout);
+      currentGameTimeout = null;
+    }
+  } else {
+    // Resume the game
+    paused = false;
+    document.getElementById('pauseButton').textContent = "Pause";
+    if (remainingTime > 0) {
+      currentGameTimeout = setTimeout(nextChordHandler, remainingTime);
+      nextChordDueTime = Date.now() + remainingTime;
+    } else {
+      // If for some reason no remainingTime stored, just continue
+      nextChordHandler();
+    }
+  }
+}
+
+// Text-to-speech
+function speak(text) {
+  var utter = new SpeechSynthesisUtterance(text);
+  speechSynthesis.speak(utter);
+}
+
+// --- SPEED GAME LOGIC ---
+function playSpeedGame(rep, startSpeed, step, minSpeed, chordsList) {
+  numberOfChangesPerTime = rep;
+  startingTimeInterval = startSpeed;
+  timeIntervalCount = numberOfChangesPerTime;
+
+  alert("Welcome to the random fast chord changes!\nStarting at " + startSpeed + " seconds. " +
+        "You will do " + rep + " repetitions and then speed up by " + step + " seconds, until reaching " + minSpeed + " seconds.\nClick OK to start.");
+
+  nextChordHandler = function() {
+    if (paused) return; // If paused, do nothing
+    var chord = chordsList[Math.floor(Math.random() * chordsList.length)];
+    document.getElementById('chordDisplay').textContent = chord;
+    speak(chord);
+
+    if (timeIntervalCount === 0) {
+      startingTimeInterval = startingTimeInterval - step;
+      timeIntervalCount = numberOfChangesPerTime;
+    }
+
+    if (startingTimeInterval < minSpeed) {
+      alert("We reached the minimal interval speed. Game over!");
+      return;
+    }
+
+    timeIntervalCount--;
+    scheduleNextChord(startingTimeInterval * 1000);
+  };
+
+  nextChordHandler();
+}
+
+// --- STATIC GAME LOGIC ---
+function playStaticGame(speed, duration, chordsList) {
+  alert("Welcome to the easy mode!\nChange chords every " + speed + " seconds for " + duration + " seconds.\nClick OK to start!");
+  startTime = Date.now();
+
+  nextChordHandler = function() {
+    if (paused) return; // If paused, do nothing
+    var chord = chordsList[Math.floor(Math.random() * chordsList.length)];
+    document.getElementById('chordDisplay').textContent = chord;
+    speak(chord);
+
+    var elapsed = (Date.now() - startTime)/1000;
+    if (elapsed > duration) {
+      alert("Time is up! Hope your fingers are not hurting too much!");
+      return;
+    }
+
+    scheduleNextChord(speed * 1000);
+  };
+
+  nextChordHandler();
+}
+
+// Schedules the next chord, sets global variables to handle pause/resume
+function scheduleNextChord(delay) {
+  if (currentGameTimeout) clearTimeout(currentGameTimeout);
+  currentGameTimeout = setTimeout(nextChordHandler, delay);
+  nextChordDueTime = Date.now() + delay;
+}
+
+// Initialize the field display based on default selection
+toggleFields();
+</script>
+
+</body>
+</html>
